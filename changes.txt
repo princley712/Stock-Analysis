@@ -1,0 +1,323 @@
+# STOCKPULSE AI – UPDATED PRODUCTION LOGIC (ACCURACY IMPROVEMENTS)
+
+This document outlines all required changes to upgrade your current system into a more accurate, production-grade scoring engine.
+
+---
+
+1. MACHINE LEARNING IMPROVEMENTS (HIGHEST PRIORITY)
+
+---
+
+❌ CURRENT:
+
+* Target: Next-day price prediction
+* Data: 6 months per stock
+* Model: Random Forest
+
+✅ CHANGE TO:
+
+1.1 Target Variable:
+
+* Replace next-day prediction with 5-day return classification:
+
+  y =
+  1  if return_5d > +2%
+  0  if return_5d < -2%
+  ignore otherwise
+
+→ This reduces noise and improves accuracy.
+
+---
+
+1.2 Dataset Size:
+
+* Use minimum 2–5 years of historical data
+* OR train on multiple stocks together
+
+---
+
+1.3 Model Upgrade:
+
+* Replace Random Forest with:
+
+  * XGBoost OR LightGBM
+
+---
+
+1.4 Add Features:
+
+* Returns: 1d, 3d, 5d, 10d
+* Volatility (rolling std)
+* RSI
+* MACD
+* Bollinger Band width
+* Volume z-score
+* ADX (trend strength)
+* Market trend (Nifty return)
+
+---
+
+1.5 Probability Calibration:
+
+* Apply calibration (Platt scaling or isotonic regression)
+* Output must be true probability (0–1)
+
+---
+
+1.6 ML Confidence:
+
+* Calculate entropy:
+
+  confidence_ml = 1 - [ -p*log(p) - (1-p)*log(1-p) ]
+
+---
+
+2. TECHNICAL INDICATOR SYSTEM (MAJOR CHANGE)
+
+---
+
+❌ CURRENT:
+
+* Binary signals (bullish/bearish)
+* Simple counting
+
+✅ CHANGE TO:
+
+2.1 Convert Indicators to Continuous Scores:
+
+* Normalize each indicator using z-score:
+
+  z = (value - mean) / std
+
+* Convert to probability:
+
+  p = 1 / (1 + exp(-z))
+
+---
+
+2.2 Direction Adjustments:
+
+* RSI:
+  p_rsi = 1 - sigmoid(z_rsi)
+
+* Bollinger Bands:
+  p_bb = 1 - sigmoid(z_bb)
+
+* Trend indicators (MACD, MA):
+  p_trend = sigmoid(z_trend)
+
+---
+
+2.3 Combine Indicators:
+
+S_tech = Σ (weight_i * p_i)
+
+Suggested weights:
+
+* Trend: 0.4
+* Momentum: 0.2
+* Volatility: 0.2
+* Volume/ADX: 0.2
+
+---
+
+2.4 Technical Confidence:
+
+confidence_tech = 1 - variance(p_i)
+
+---
+
+3. SENTIMENT ANALYSIS UPGRADE
+
+---
+
+❌ CURRENT:
+
+* TextBlob (weak accuracy)
+
+✅ CHANGE TO:
+
+3.1 Replace TextBlob with:
+
+* FinBERT (preferred)
+* OR VADER (fallback)
+
+---
+
+3.2 Sentiment Calculation:
+
+For each headline:
+score_j ∈ [-1, 1]
+
+Apply weights:
+weight_j = exp(-lambda * time_decay) * source_weight
+
+Final sentiment:
+S_sent = weighted average
+
+Convert to probability:
+p_sent = (S_sent + 1) / 2
+
+---
+
+3.3 Sentiment Confidence:
+
+* Based on:
+
+  * variance of scores
+  * number of headlines
+
+---
+
+4. REMOVE DANGEROUS OVERRIDE
+
+---
+
+❌ REMOVE:
+
+* 70% crash → force Strong Buy
+
+---
+
+✅ REPLACE WITH SAFE VERSION:
+
+If:
+
+* price drop > 50% (6 months)
+* RSI < 30
+* volume spike
+
+Then:
+
+* Add small boost (+0.1) to score
+* DO NOT override system
+
+---
+
+5. ADD MARKET CONTEXT (IMPORTANT)
+
+---
+
+Add:
+
+* Nifty trend score
+* Sector trend score
+
+Compute:
+
+market_score = 0.5 * nifty + 0.5 * sector
+
+Apply adjustment:
+
+final_score *= (0.7 + 0.3 * market_score)
+
+---
+
+6. DYNAMIC WEIGHTING (KEY IMPROVEMENT)
+
+---
+
+❌ CURRENT:
+
+* Fixed weights (40/35/25)
+
+---
+
+✅ CHANGE TO:
+
+Compute effective weights:
+
+w_eff = (base_weight * confidence) / total
+
+Base weights:
+
+* ML: 0.5
+* Technical: 0.3
+* Sentiment: 0.2
+
+---
+
+This ensures:
+
+* High-confidence signals get more weight
+* Weak signals get reduced influence
+
+---
+
+7. FINAL SCORING FORMULA
+
+---
+
+Compute:
+
+Final Score =
+(ML * ML_confidence * 0.5) +
+(Technical * 0.3) +
+(Sentiment * 0.2)
+
+Apply dynamic normalization.
+
+---
+
+Then:
+
+Score = clamp(0–1) * 100
+
+---
+
+8. DECISION LOGIC (UPDATED)
+
+---
+
+Score ≥ 75 → Strong Buy
+Score ≥ 60 → Buy
+Score ≥ 45 → Hold
+Score ≥ 30 → Sell
+Score < 30 → Strong Sell
+
+---
+
+Also display:
+
+Confidence Score (0–100)
+
+---
+
+9. BACKTESTING (MANDATORY)
+
+---
+
+Add module:
+
+* Run strategy on historical data
+* Measure:
+
+  * Accuracy
+  * Win rate
+  * Returns
+
+→ Without this, system is not validated
+
+---
+
+10. OPTIONAL BUT HIGH VALUE
+
+---
+
+* Add sector rotation signals
+* Add macro indicators (interest rates, inflation)
+* Add anomaly detection (sudden spikes)
+
+---
+
+## FINAL RESULT
+
+After applying these changes, your system becomes:
+
+* Probabilistic (not guess-based)
+* More stable (less noise-sensitive)
+* Adaptive (confidence-based weighting)
+* Safer (no blind overrides)
+* Closer to real quant systems
+
+END OF FILE

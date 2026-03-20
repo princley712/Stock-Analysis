@@ -1,0 +1,48 @@
+STOCKPULSE AI: CALCULATION LOGIC EXPLAINED
+===========================================
+
+This application uses a multi-layered approach to analyze stocks, combining raw Technical Indicators, News Sentiment, and Machine Learning (Random Forest) into a single 0-100 composite Buy/Sell score.
+
+1. TECHNICAL INDICATORS
+-----------------------
+- Moving Averages (20-day & 50-day SMA): Used to determine short-term and medium-term trends.
+- RSI (Relative Strength Index): A 14-day RSI is calculated. Values < 30 are completely oversold (bullish), values > 70 are overbought (bearish).
+- MACD (Moving Average Convergence Divergence): Uses the difference between 12-day and 26-day EMA. A positive MACD crossing above the signal line generates a bullish indicator.
+- Bollinger Bands (20-day, 2 Standard Deviations): Measures volatility. If the price touches the lower band, it's considered bullish.
+- Score Conversion: All technicals are assigned a weighted score from 0-100 based on how many bullish vs bearish signals they trigger.
+
+2. NEWS SENTIMENT ANALYSIS
+--------------------------
+- Google News RSS: The app fetches the 10 most recent news headlines for the searched ticker.
+- TextBlob Analysis: A Natural Language Processing library evaluates the text of each headline.
+- Polarity: Each headline gets a score from -1.0 (highly negative) to +1.0 (highly positive).
+- Final Score: The average polarity is scaled to a 0-100 score. (e.g. 50 is perfectly neutral, >60 is positive, <40 is negative).
+
+3. MACHINE LEARNING MODEL
+-------------------------
+- Algorithm: Random Forest Classifier (100 trees, max depth 5).
+- Features Passed: Returns (1d, 5d, 10d), Volatility, RSI, MACD, Volume Ratios, and Bollinger Band width.
+- Training: The model trains instantly on the past 6 months of daily data for the specifically requested stock. It splits the data 80/20 to train and test.
+- Target: The model tries to predict if the NEXT Day's closing price will be higher than TODAY's closing price.
+- ML Score: We extract the probability (0% to 100%) that the stock goes UP tomorrow according to the Random Forest model.
+
+4. OVERALL BUY/SELL COMPOSITE SCORE
+-----------------------------------
+The individual components are combined via a weighted average:
+- ML Model Prediction: 40% weight
+- Technical Signals: 35% weight
+- News Sentiment: 25% weight
+
+The resulting composite number determines the core AI signal:
+- >= 70 : Strong Buy
+- >= 60 : Buy
+- >= 40 : Hold
+- >= 30 : Sell
+- < 30 : Strong Sell
+
+5. MEAN REVERSION (70% CRASH OVERRIDE)
+--------------------------------------
+To catch deeply undervalued "buy the dip" opportunities, there is a hardcoded safety override:
+- The backend checks the Maximum High price over the last 6 months.
+- If the Current Price is down by 70% or more from that 6-month High, the AI forcefully upgrades the composite score to a minimum of 85 (Strong Buy). 
+- The UI triggers the "🚀 Strong Buy Override" alert when this condition is met.
