@@ -11,12 +11,6 @@ import pandas as pd
 _cache = {}
 CACHE_TTL = 30  # seconds
 
-# Custom session to bypass Yahoo Finance data center IP blocks
-session = requests.Session()
-session.headers.update({
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-})
-
 
 def get_stock_data(ticker: str, period: str = "1mo", interval: str = "1d") -> dict:
     """
@@ -30,7 +24,7 @@ def get_stock_data(ticker: str, period: str = "1mo", interval: str = "1d") -> di
         return _cache[cache_key]["data"]
 
     try:
-        stock = yf.Ticker(ticker, session=session)
+        stock = yf.Ticker(ticker)
         hist = stock.history(period=period, interval=interval)
 
         if hist.empty:
@@ -95,7 +89,7 @@ def get_historical_data(ticker: str, period: str = "6mo") -> pd.DataFrame:
         return _cache[cache_key]["data"]
 
     try:
-        stock = yf.Ticker(ticker, session=session)
+        stock = yf.Ticker(ticker)
         df = stock.history(period=period, interval="1d")
 
         if not df.empty:
