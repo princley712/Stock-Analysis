@@ -3,12 +3,19 @@ Stock data service using yfinance.
 Fetches OHLCV data with in-memory caching to minimize API calls.
 """
 import time
+import requests
 import yfinance as yf
 import pandas as pd
 
 # In-memory cache: { ticker: { "data": ..., "info": ..., "timestamp": ... } }
 _cache = {}
 CACHE_TTL = 30  # seconds
+
+# Custom session to bypass Yahoo Finance data center IP blocks
+session = requests.Session()
+session.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+})
 
 
 def get_stock_data(ticker: str, period: str = "1mo", interval: str = "1d") -> dict:
@@ -23,7 +30,7 @@ def get_stock_data(ticker: str, period: str = "1mo", interval: str = "1d") -> di
         return _cache[cache_key]["data"]
 
     try:
-        stock = yf.Ticker(ticker)
+        stock = yf.Ticker(ticker, session=session)
         hist = stock.history(period=period, interval=interval)
 
         if hist.empty:
@@ -88,7 +95,7 @@ def get_historical_data(ticker: str, period: str = "6mo") -> pd.DataFrame:
         return _cache[cache_key]["data"]
 
     try:
-        stock = yf.Ticker(ticker)
+        stock = yf.Ticker(ticker, session=session)
         df = stock.history(period=period, interval="1d")
 
         if not df.empty:
