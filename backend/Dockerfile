@@ -9,7 +9,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Download TextBlob corpora
-RUN python -c "import textblob; textblob.download_corpora()"
+RUN python3 -m textblob.download_corpora
 
 # Copy application code
 COPY . .
