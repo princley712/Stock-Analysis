@@ -8,8 +8,8 @@ import IndicatorsPanel from '../components/IndicatorsPanel';
 import NewsPanel from '../components/NewsPanel';
 import BuySellMeter from '../components/BuySellMeter';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-const POLL_INTERVAL = 120000; // 2 minutes (prevents Yahoo IP Bans)
+const API_BASE = '';
+const POLL_INTERVAL = 10000; // 10 seconds
 
 const RANGES = [
   { label: '1D', value: '1d', interval: '5m' },
