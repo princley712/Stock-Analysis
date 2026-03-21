@@ -15,9 +15,12 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 # Standalone mode only needs these files
-COPY --from=builder /app/public ./public
+# Create public directory if missing to avoid COPY failure
+RUN mkdir -p public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
+# Copy public folder only if it exists in the builder
+RUN if [ -d /app/public ]; then cp -r /app/public/* ./public/ || true; fi
 
 EXPOSE 3000
 
