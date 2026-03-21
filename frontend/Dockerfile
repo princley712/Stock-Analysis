@@ -19,8 +19,8 @@ ENV NODE_ENV=production
 RUN mkdir -p public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
-# Copy public folder only if it exists in the builder
-RUN if [ -d /app/public ]; then cp -r /app/public/* ./public/ || true; fi
+# Copy public folder safely
+COPY --from=builder /app/public ./public/
 
 EXPOSE 3000
 
