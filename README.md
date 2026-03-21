@@ -102,20 +102,28 @@ npm run dev
 
 ## Deployment (Free Tier)
 
-### Backend → Render
+### AWS EC2 (t2.micro) with Docker
 
-1. Push `backend/` to GitHub
-2. Create a new **Web Service** on [render.com](https://render.com)
-3. Connect your repo, set root directory to `backend`
-4. Build command: `pip install -r requirements.txt`
-5. Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-
-### Frontend → Vercel
-
-1. Push `frontend/` to GitHub
-2. Import on [vercel.com](https://vercel.com)
-3. Set environment variable: `NEXT_PUBLIC_API_URL=https://your-backend.onrender.com`
-4. Deploy
+1. Launch an **Ubuntu 22.04 t2.micro** instance on AWS.
+2. In EC2 Security Groups, allow **HTTP (80)** and **Custom TCP (8000)** traffic.
+3. SSH into your instance and install Docker & Docker Compose:
+   ```bash
+   sudo apt update
+   sudo apt install docker.io docker-compose git -y
+   sudo usermod -aG docker ubuntu
+   # Re-login or run: newgrp docker
+   ```
+4. Clone your repository:
+   ```bash
+   git clone <your-repo-url>
+   cd <your-repo-folder>
+   ```
+5. Set your EC2 public IP and start the containers:
+   ```bash
+   export EC2_PUBLIC_IP="your.ec2.public.ip.here"
+   docker-compose up -d --build
+   ```
+6. Access your dashboard at `http://your.ec2.public.ip.here`
 
 ---
 
@@ -143,8 +151,7 @@ Backend (FastAPI / Render)
 | **yfinance** | Rate-limited, may break if Yahoo changes HTML | 30s server cache, 10s polling |
 | **Google News RSS** | ~10 headlines, no deep search | Sufficient for sentiment signal |
 | **TextBlob** | Generic, not finance-tuned | Lightweight; swap for FinBERT in production |
-| **Render free tier** | 512MB RAM, spins down after 15min | TextBlob keeps RAM low; cold start ~30s |
-| **Vercel free tier** | 100GB bandwidth/mo | Plenty for personal/demo use |
+| **AWS EC2 t2.micro** | 1GB RAM can be tight for NextJS builds and ML | Docker Compose handles resource isolation, multi-stage NextJS build keeps final image small |
 
 ---
 
@@ -152,7 +159,9 @@ Backend (FastAPI / Render)
 
 ```
 timepass/
+├── docker-compose.yml           # AWS deployment config
 ├── backend/
+│   ├── Dockerfile
 │   ├── main.py                  # FastAPI app
 │   ├── requirements.txt         # Python dependencies
 │   ├── render.yaml              # Render config
@@ -163,6 +172,7 @@ timepass/
 │       ├── sentiment.py         # TextBlob sentiment
 │       └── ml_model.py          # Random Forest + scoring
 ├── frontend/
+│   ├── Dockerfile
 │   ├── package.json
 │   ├── next.config.js
 │   ├── vercel.json
