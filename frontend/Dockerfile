@@ -22,7 +22,6 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 # Copy built assets
-COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 
 # Expose port
