@@ -54,8 +54,16 @@ export default function Dashboard() {
         fetch(`${API_BASE}/api/analysis/${t}`).then(r => r.ok ? r.json() : Promise.reject(r)),
       ]);
 
-      if (stockRes.status === 'fulfilled') setStockData(stockRes.value);
-      else setError(`Could not fetch stock data for ${t}`);
+      if (stockRes.status === 'fulfilled') {
+        const data = stockRes.value;
+        setStockData(data);
+        // Sync resolved ticker back to state if it changed (e.g. RELIANCE -> RELIANCE.NS)
+        if (data.ticker && data.ticker !== t) {
+          setTicker(data.ticker);
+        }
+      } else {
+        setError(`Could not fetch stock data for ${t}`);
+      }
 
       if (indicatorsRes.status === 'fulfilled') setIndicators(indicatorsRes.value);
       if (newsRes.status === 'fulfilled') setNews(newsRes.value);

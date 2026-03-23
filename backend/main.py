@@ -10,6 +10,7 @@ from services.indicators import compute_indicators, get_technical_score
 from services.news import fetch_news
 from services.sentiment import analyze_news_sentiment
 from services.ml_model import train_and_predict, compute_buy_sell_score
+from services.utils import resolve_ticker
 
 
 app = FastAPI(
@@ -44,7 +45,8 @@ async def get_stock(ticker: str, period: str = "6mo", interval: str = "1d"):
     Get stock price data and OHLCV history.
     Returns current price, change, volume, and candlestick data.
     """
-    data = get_stock_data(ticker.upper(), period=period, interval=interval)
+    resolved_ticker = resolve_ticker(ticker)
+    data = get_stock_data(resolved_ticker, period=period, interval=interval)
     if "error" in data and "ohlcv" not in data:
         raise HTTPException(status_code=404, detail=data["error"])
     return data
@@ -53,7 +55,8 @@ async def get_stock(ticker: str, period: str = "6mo", interval: str = "1d"):
 @app.get("/api/stock/{ticker}/intraday")
 async def get_stock_intraday(ticker: str):
     """Get intraday data (5-minute candles, last 5 days)."""
-    data = get_intraday_data(ticker.upper())
+    resolved_ticker = resolve_ticker(ticker)
+    data = get_intraday_data(resolved_ticker)
     if "error" in data and "ohlcv" not in data:
         raise HTTPException(status_code=404, detail=data["error"])
     return data
@@ -65,9 +68,10 @@ async def get_indicators(ticker: str):
     Get technical indicators for a stock.
     Returns RSI, MACD, Moving Averages, Bollinger Bands, and volume analysis.
     """
-    df = get_historical_data(ticker.upper(), period="6mo")
+    resolved_ticker = resolve_ticker(ticker)
+    df = get_historical_data(resolved_ticker, period="6mo")
     if df.empty:
-        raise HTTPException(status_code=404, detail=f"No historical data for {ticker}")
+        raise HTTPException(status_code=404, detail=f"No historical data for {resolved_ticker}")
 
     indicators = compute_indicators(df)
     if "error" in indicators:
@@ -82,7 +86,8 @@ async def get_news(ticker: str):
     Get news articles with sentiment analysis for a stock.
     Returns headlines from Google News with TextBlob sentiment scores.
     """
-    articles = fetch_news(ticker.upper())
+    resolved_ticker = resolve_ticker(ticker)
+    articles = fetch_news(resolved_ticker)
     result = analyze_news_sentiment(articles)
     return result
 
@@ -93,12 +98,12 @@ async def get_full_analysis(ticker: str):
     Full AI analysis: combines stock data, indicators, sentiment, and ML prediction
     into a Buy/Sell score (0-100).
     """
-    ticker = ticker.upper()
+    resolved_ticker = resolve_ticker(ticker)
 
     # 1. Get historical data
-    df = get_historical_data(ticker, period="6mo")
+    df = get_historical_data(resolved_ticker, period="6mo")
     if df.empty:
-        raise HTTPException(status_code=404, detail=f"No data found for {ticker}")
+        raise HTTPException(status_code=404, detail=f"No data found for {resolved_ticker}")
 
     # 2. Compute technical indicators
     indicators = compute_indicators(df)
@@ -107,7 +112,7 @@ async def get_full_analysis(ticker: str):
     technical_confidence = tech_dict["confidence"]
 
     # 3. Get news sentiment
-    articles = fetch_news(ticker)
+    articles = fetch_news(resolved_ticker)
     sentiment = analyze_news_sentiment(articles)
     sentiment_score = sentiment["aggregate"]["score"]
     sentiment_confidence = sentiment["aggregate"]["confidence"]
@@ -124,7 +129,7 @@ async def get_full_analysis(ticker: str):
     )
 
     return {
-        "ticker": ticker,
+        "ticker": resolved_ticker,
         "buy_sell": buy_sell,
         "indicators": indicators if "error" not in indicators else None,
         "sentiment": sentiment["aggregate"],
