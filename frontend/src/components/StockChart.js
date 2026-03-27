@@ -9,23 +9,27 @@ import {
   Tooltip,
   Legend,
   TimeScale,
+  TimeSeriesScale,
 } from 'chart.js';
 import { Chart, Bar } from 'react-chartjs-2';
 import 'chartjs-adapter-date-fns';
 import { CandlestickController, CandlestickElement } from 'chartjs-chart-financial';
+import annotationPlugin from 'chartjs-plugin-annotation';
 
 ChartJS.register(
   CategoryScale,
   LinearScale,
   TimeScale,
+  TimeSeriesScale,
   BarElement,
   Tooltip,
   Legend,
   CandlestickController,
-  CandlestickElement
+  CandlestickElement,
+  annotationPlugin
 );
 
-export default function StockChart({ ohlcv, ranges = [], activeRange = {}, onRangeChange = () => {} }) {
+export default function StockChart({ ohlcv, ranges = [], activeRange = {}, onRangeChange = () => {}, focusedPattern = null, onClearFocus = () => {} }) {
   const chartRef = useRef(null);
 
   if (!ohlcv || ohlcv.length === 0) {
@@ -82,6 +86,39 @@ export default function StockChart({ ohlcv, ranges = [], activeRange = {}, onRan
     maintainAspectRatio: false,
     plugins: {
       legend: { display: false },
+      annotation: {
+        annotations: focusedPattern && focusedPattern.dates && focusedPattern.dates.length > 0 ? {
+          patternHighlight: focusedPattern.dates.length > 1 ? {
+            type: 'box',
+            xMin: new Date(focusedPattern.dates[0]).getTime(),
+            xMax: new Date(focusedPattern.dates[focusedPattern.dates.length - 1]).getTime(),
+            backgroundColor: focusedPattern.type === 'Bullish' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+            borderColor: focusedPattern.type === 'Bullish' ? '#10b981' : '#ef4444',
+            borderWidth: 2,
+            drawTime: 'beforeDatasetsDraw',
+            label: {
+              content: focusedPattern.name,
+              position: 'top',
+              display: true,
+              backgroundColor: focusedPattern.type === 'Bullish' ? '#10b981' : '#ef4444',
+              color: '#fff',
+            }
+          } : {
+            type: 'line',
+            scaleID: 'x',
+            value: new Date(focusedPattern.dates[0]).getTime(),
+            borderColor: focusedPattern.type === 'Bullish' ? '#10b981' : '#ef4444',
+            borderWidth: 3,
+            label: {
+              content: focusedPattern.name,
+              display: true,
+              position: 'top',
+              backgroundColor: focusedPattern.type === 'Bullish' ? '#10b981' : '#ef4444',
+              color: '#fff',
+            }
+          }
+        } : {}
+      },
       tooltip: {
         backgroundColor: 'rgba(17, 24, 39, 0.95)',
         titleColor: '#f1f5f9',
@@ -107,7 +144,7 @@ export default function StockChart({ ohlcv, ranges = [], activeRange = {}, onRan
     },
     scales: {
       x: {
-        type: 'time',
+        type: 'timeseries',
         time: {
           unit: isIntraday ? 'hour' : 'day',
           displayFormats: {
@@ -187,7 +224,8 @@ export default function StockChart({ ohlcv, ranges = [], activeRange = {}, onRan
     },
   };
 
-  return (
+  // Build the normal chart card (always rendered cleanly)
+  const chartCard = (
     <div className="card chart-card fade-in fade-in-delay-1">
       <div className="card-header" style={{ flexWrap: 'wrap', gap: '10px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -228,5 +266,95 @@ export default function StockChart({ ohlcv, ranges = [], activeRange = {}, onRan
         <Bar data={volumeData} options={volumeOptions} />
       </div>
     </div>
+  );
+
+  // Pattern focus overlay — rendered as a SEPARATE sibling, never touches the card
+  const patternOverlay = focusedPattern ? (
+    <div style={{
+      position: 'fixed',
+      top: 0, left: 0, right: 0, bottom: 0,
+      backgroundColor: 'rgba(2, 6, 23, 0.92)',
+      backdropFilter: 'blur(12px)',
+      zIndex: 9999,
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: '30px',
+      animation: 'fadeIn 0.3s ease'
+    }}>
+      {/* Close button */}
+      <button 
+        onClick={onClearFocus}
+        style={{
+          position: 'absolute',
+          top: '24px',
+          right: '32px',
+          background: 'rgba(239, 68, 68, 0.15)',
+          color: '#f87171',
+          border: '1px solid rgba(239, 68, 68, 0.3)',
+          padding: '8px 20px',
+          borderRadius: '8px',
+          cursor: 'pointer',
+          fontWeight: '600',
+          zIndex: 10000,
+          fontSize: '0.9rem',
+          transition: 'all 0.2s',
+        }}
+        onMouseOver={(e) => { e.currentTarget.style.background = '#ef4444'; e.currentTarget.style.color = '#fff'; }}
+        onMouseOut={(e) => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.15)'; e.currentTarget.style.color = '#f87171'; }}
+      >
+        ✖ Exit Pattern View
+      </button>
+
+      {/* Pattern title */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        marginBottom: '20px',
+      }}>
+        <span style={{ fontSize: '1.4rem', fontWeight: '700', color: '#f1f5f9' }}>
+          🔍 {focusedPattern.name}
+        </span>
+        <span style={{
+          padding: '4px 12px',
+          borderRadius: '20px',
+          fontSize: '0.75rem',
+          fontWeight: '600',
+          background: focusedPattern.type === 'Bullish' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+          color: focusedPattern.type === 'Bullish' ? '#10b981' : '#ef4444',
+          border: `1px solid ${focusedPattern.type === 'Bullish' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+        }}>
+          {focusedPattern.type} • {Math.round(focusedPattern.confidence * 100)}%
+        </span>
+      </div>
+
+      {/* Modal chart */}
+      <div style={{
+        width: '85%',
+        maxWidth: '1200px',
+        height: '65vh',
+        background: 'rgba(15, 23, 42, 0.6)',
+        border: '1px solid rgba(148, 163, 184, 0.1)',
+        borderRadius: '16px',
+        padding: '20px',
+        boxShadow: '0 25px 60px rgba(0, 0, 0, 0.5)',
+      }}>
+        <Chart type="candlestick" data={priceData} options={priceOptions} />
+      </div>
+
+      {/* Volume in modal */}
+      <div style={{ width: '85%', maxWidth: '1200px', height: '50px', marginTop: '8px' }}>
+        <Bar data={volumeData} options={volumeOptions} />
+      </div>
+    </div>
+  ) : null;
+
+  return (
+    <>
+      {chartCard}
+      {patternOverlay}
+    </>
   );
 }

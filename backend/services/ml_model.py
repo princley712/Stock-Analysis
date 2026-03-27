@@ -9,6 +9,7 @@ from xgboost import XGBClassifier
 from sklearn.preprocessing import StandardScaler
 import ta
 import traceback
+from services.patterns import detect_all_patterns
 
 def prepare_features(df: pd.DataFrame) -> pd.DataFrame:
     features = pd.DataFrame(index=df.index)
@@ -143,6 +144,22 @@ def train_and_predict(df: pd.DataFrame, horizon_days: int = 5) -> dict:
         return {"prediction": "hold", "confidence": 0.0, "ml_score": 50.0, "error": str(e)}
 
 
+def compute_pattern_score(patterns: list) -> tuple:
+    if not patterns:
+        return 50.0, 0.0
+    
+    score = 50.0
+    for p in patterns:
+        boost = 15.0 * p["confidence"]
+        if p["type"] == "Bullish":
+            score += boost
+        elif p["type"] == "Bearish":
+            score -= boost
+            
+    score = max(0.0, min(100.0, score))
+    conf = max([p["confidence"] for p in patterns]) * 100
+    return round(score, 1), round(conf, 1)
+
 def compute_buy_sell_score(
     df: pd.DataFrame,
     tech_score: float,
@@ -157,6 +174,9 @@ def compute_buy_sell_score(
     }
 
     results = {}
+    
+    patterns = detect_all_patterns(df)
+    pat_score, pat_conf = compute_pattern_score(patterns)
 
     for key, info in horizons.items():
         ml_result = train_and_predict(df, horizon_days=info["days"])
@@ -164,27 +184,27 @@ def compute_buy_sell_score(
         ml_score = ml_result.get("ml_score", 50.0)
         ml_conf = ml_result.get("confidence", 0.0)
 
-        # Dynamic Weighting Formula:
-        b_ml, b_tech, b_sent = 0.5, 0.3, 0.2
+        b_ml, b_tech, b_sent, b_pat = 0.40, 0.25, 0.20, 0.15
         
-        # Adjust technical weight for long term (technical drops, ML/Fundamentals increase theoretically)
         if key == "long_term":
-            b_ml, b_tech, b_sent = 0.6, 0.2, 0.2
+            b_ml, b_tech, b_sent, b_pat = 0.60, 0.20, 0.20, 0.0
         
         w_ml = b_ml * (ml_conf / 100.0)
         w_tech = b_tech * (tech_conf / 100.0)
         w_sent = b_sent * (sent_conf / 100.0)
+        w_pat = b_pat * (pat_conf / 100.0) if b_pat > 0 else 0
         
-        total_w = w_ml + w_tech + w_sent
+        total_w = w_ml + w_tech + w_sent + w_pat
 
         if total_w <= 0.001:
-            eff_ml, eff_tech, eff_sent = b_ml, b_tech, b_sent
+            eff_ml, eff_tech, eff_sent, eff_pat = b_ml, b_tech, b_sent, b_pat
         else:
             eff_ml = w_ml / total_w
             eff_tech = w_tech / total_w
             eff_sent = w_sent / total_w
+            eff_pat = w_pat / total_w
 
-        composite = (ml_score * eff_ml) + (tech_score * eff_tech) + (sent_score * eff_sent)
+        composite = (ml_score * eff_ml) + (tech_score * eff_tech) + (sent_score * eff_sent) + (pat_score * eff_pat)
         composite = round(max(0, min(100, composite)), 1)
 
         override_applied = False
@@ -213,9 +233,9 @@ def compute_buy_sell_score(
         else: signal = "strong_sell"
 
         overall_conf = round(
-            ((ml_conf * b_ml) + (tech_conf * b_tech) + (sent_conf * b_sent)) / (b_ml + b_tech + b_sent),
+            ((ml_conf * b_ml) + (tech_conf * b_tech) + (sent_conf * b_sent) + (pat_conf * b_pat)) / (b_ml + b_tech + b_sent + b_pat),
             1
-        )
+        ) if (b_ml + b_tech + b_sent + b_pat) > 0 else 0
 
         results[key] = {
             "name": info["name"],
@@ -226,6 +246,7 @@ def compute_buy_sell_score(
                 "ml": {"score": round(ml_score, 1), "weight": f"{round(eff_ml*100)}%"},
                 "technical": {"score": round(tech_score, 1), "weight": f"{round(eff_tech*100)}%"},
                 "sentiment": {"score": round(sent_score, 1), "weight": f"{round(eff_sent*100)}%"},
+                "patterns": {"score": round(pat_score, 1), "weight": f"{round(eff_pat*100)}%"},
             },
             "ml_details": {
                 "prediction": ml_result.get("prediction", "hold"),
@@ -236,4 +257,4 @@ def compute_buy_sell_score(
             },
         }
 
-    return results
+    return {"horizons": results, "patterns": patterns}

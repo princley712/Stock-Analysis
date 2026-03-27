@@ -7,6 +7,7 @@ import StockChart from '../components/StockChart';
 import IndicatorsPanel from '../components/IndicatorsPanel';
 import NewsPanel from '../components/NewsPanel';
 import BuySellMeter from '../components/BuySellMeter';
+import PatternsPanel from '../components/PatternsPanel';
 
 const API_BASE = '';
 const POLL_INTERVAL = 10000; // 10 seconds
@@ -34,6 +35,7 @@ export default function Dashboard() {
   
   const [activeRange, setActiveRange] = useState(RANGES[3]); // Default 6M
   const activeRangeRef = useRef(RANGES[3]);
+  const [focusedPattern, setFocusedPattern] = useState(null);
 
   const pollingRef = useRef(null);
   const isFirstLoad = useRef(true);
@@ -100,6 +102,7 @@ export default function Dashboard() {
   }, [fetchAllData]);
 
   const handleRangeChange = async (range) => {
+    setFocusedPattern(null); // Reset focus when switching ranges
     setActiveRange(range);
     activeRangeRef.current = range;
     if (!ticker) return;
@@ -189,8 +192,11 @@ export default function Dashboard() {
             ranges={RANGES} 
             activeRange={activeRange} 
             onRangeChange={handleRangeChange} 
+            focusedPattern={focusedPattern}
+            onClearFocus={() => setFocusedPattern(null)}
           />
           <BuySellMeter analysis={analysis} />
+          <PatternsPanel patterns={analysis?.patterns} onSelectPattern={(p) => setFocusedPattern(p)} />
           <IndicatorsPanel indicators={indicators} />
           <NewsPanel news={news} />
         </div>

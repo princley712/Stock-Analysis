@@ -34,13 +34,13 @@ app.add_middleware(
 
 
 @app.get("/api/health")
-async def health_check():
+def health_check():
     """Health check endpoint."""
     return {"status": "ok", "service": "StockPulse AI"}
 
 
 @app.get("/api/stock/{ticker}")
-async def get_stock(ticker: str, period: str = "6mo", interval: str = "1d"):
+def get_stock(ticker: str, period: str = "6mo", interval: str = "1d"):
     """
     Get stock price data and OHLCV history.
     Returns current price, change, volume, and candlestick data.
@@ -53,7 +53,7 @@ async def get_stock(ticker: str, period: str = "6mo", interval: str = "1d"):
 
 
 @app.get("/api/stock/{ticker}/intraday")
-async def get_stock_intraday(ticker: str):
+def get_stock_intraday(ticker: str):
     """Get intraday data (5-minute candles, last 5 days)."""
     resolved_ticker = resolve_ticker(ticker)
     data = get_intraday_data(resolved_ticker)
@@ -63,7 +63,7 @@ async def get_stock_intraday(ticker: str):
 
 
 @app.get("/api/indicators/{ticker}")
-async def get_indicators(ticker: str):
+def get_indicators(ticker: str):
     """
     Get technical indicators for a stock.
     Returns RSI, MACD, Moving Averages, Bollinger Bands, and volume analysis.
@@ -81,7 +81,7 @@ async def get_indicators(ticker: str):
 
 
 @app.get("/api/news/{ticker}")
-async def get_news(ticker: str):
+def get_news(ticker: str):
     """
     Get news articles with sentiment analysis for a stock.
     Returns headlines from Google News with TextBlob sentiment scores.
@@ -93,7 +93,7 @@ async def get_news(ticker: str):
 
 
 @app.get("/api/analysis/{ticker}")
-async def get_full_analysis(ticker: str):
+def get_full_analysis(ticker: str):
     """
     Full AI analysis: combines stock data, indicators, sentiment, and ML prediction
     into a Buy/Sell score (0-100).
@@ -118,7 +118,7 @@ async def get_full_analysis(ticker: str):
     sentiment_confidence = sentiment["aggregate"]["confidence"]
 
     # 4. ML predictions and Composite Buy/Sell score across 3 horizons
-    buy_sell = compute_buy_sell_score(
+    analysis_res = compute_buy_sell_score(
         df=df,
         tech_score=technical_score, tech_conf=technical_confidence, 
         sent_score=sentiment_score, sent_conf=sentiment_confidence
@@ -126,7 +126,8 @@ async def get_full_analysis(ticker: str):
 
     return {
         "ticker": resolved_ticker,
-        "buy_sell": buy_sell,
+        "buy_sell": analysis_res["horizons"],
+        "patterns": analysis_res["patterns"],
         "indicators": indicators if "error" not in indicators else None,
         "sentiment": sentiment["aggregate"],
         "news_count": len(sentiment["articles"]),

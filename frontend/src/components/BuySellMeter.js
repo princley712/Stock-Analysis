@@ -206,6 +206,13 @@ export default function BuySellMeter({ analysis }) {
             </div>
             <div className="breakdown-weight">{components.sentiment?.weight ?? '-'}</div>
           </div>
+          <div className="breakdown-item">
+            <div className="breakdown-label">Patterns</div>
+            <div className="breakdown-value" style={{ color: getScoreColor(components.patterns?.score ?? 50) }}>
+              {components.patterns?.score?.toFixed(0) ?? '—'}
+            </div>
+            <div className="breakdown-weight">{components.patterns?.weight ?? '-'}</div>
+          </div>
         </div>
 
         {/* Value Trap Boost Notification */}
