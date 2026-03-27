@@ -1,28 +1,28 @@
 'use client';
 
-import { useRef, useEffect } from 'react';
+import { useRef } from 'react';
 import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
-  PointElement,
-  LineElement,
   BarElement,
-  Filler,
   Tooltip,
   Legend,
+  TimeScale,
 } from 'chart.js';
-import { Line, Bar } from 'react-chartjs-2';
+import { Chart, Bar } from 'react-chartjs-2';
+import 'chartjs-adapter-date-fns';
+import { CandlestickController, CandlestickElement } from 'chartjs-chart-financial';
 
 ChartJS.register(
   CategoryScale,
   LinearScale,
-  PointElement,
-  LineElement,
+  TimeScale,
   BarElement,
-  Filler,
   Tooltip,
-  Legend
+  Legend,
+  CandlestickController,
+  CandlestickElement
 );
 
 export default function StockChart({ ohlcv, ranges = [], activeRange = {}, onRangeChange = () => {} }) {
@@ -41,44 +41,45 @@ export default function StockChart({ ohlcv, ranges = [], activeRange = {}, onRan
     );
   }
 
-  const labels = ohlcv.map(d => {
-    const parts = d.date.split(' ');
-    return parts[0].slice(5); // MM-DD
-  });
+  // Format explicitly for chartjs-chart-financial: { x: timestamp, o: open, h: high, l: low, c: close }
+  const financialData = ohlcv.map(d => ({
+    x: new Date(d.date).getTime(),
+    o: d.open,
+    h: d.high,
+    l: d.low,
+    c: d.close,
+  }));
+
   const closes = ohlcv.map(d => d.close);
   const volumes = ohlcv.map(d => d.volume);
 
   const isUp = closes[closes.length - 1] >= closes[0];
-  const lineColor = isUp ? '#10b981' : '#ef4444';
-  const fillColor = isUp ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)';
 
   const priceData = {
-    labels,
     datasets: [
       {
-        label: 'Close Price',
-        data: closes,
-        borderColor: lineColor,
-        backgroundColor: fillColor,
-        borderWidth: 2,
-        fill: true,
-        tension: 0.3,
-        pointRadius: 0,
-        pointHoverRadius: 5,
-        pointHoverBackgroundColor: lineColor,
-        pointHoverBorderColor: '#fff',
-        pointHoverBorderWidth: 2,
+        label: 'Price',
+        data: financialData,
+        color: {
+          up: '#10b981',
+          down: '#ef4444',
+          unchanged: '#94a3b8',
+        },
+        borderColor: {
+          up: '#10b981',
+          down: '#ef4444',
+          unchanged: '#94a3b8',
+        },
+        borderWidth: 1.5,
       },
     ],
   };
 
+  const isIntraday = activeRange?.value === '1d' || activeRange?.value === '5d';
+
   const priceOptions = {
     responsive: true,
     maintainAspectRatio: false,
-    interaction: {
-      mode: 'index',
-      intersect: false,
-    },
     plugins: {
       legend: { display: false },
       tooltip: {
@@ -89,20 +90,36 @@ export default function StockChart({ ohlcv, ranges = [], activeRange = {}, onRan
         borderWidth: 1,
         padding: 12,
         displayColors: false,
-        titleFont: { family: 'JetBrains Mono', size: 12 },
-        bodyFont: { family: 'JetBrains Mono', size: 11 },
+        titleFont: { family: 'Inter', size: 12 },
+        bodyFont: { family: 'Inter', size: 11 },
         callbacks: {
-          label: (ctx) => `₹${ctx.parsed.y.toFixed(2)}`,
+          label: (ctx) => {
+            const p = ctx.raw;
+            return [
+              `O: ₹${p.o.toFixed(2)}`,
+              `H: ₹${p.h.toFixed(2)}`,
+              `L: ₹${p.l.toFixed(2)}`,
+              `C: ₹${p.c.toFixed(2)}`
+            ];
+          },
         },
       },
     },
     scales: {
       x: {
+        type: 'time',
+        time: {
+          unit: isIntraday ? 'hour' : 'day',
+          displayFormats: {
+            hour: 'HH:mm',
+            day: 'MMM d'
+          }
+        },
         grid: { color: 'rgba(148, 163, 184, 0.06)' },
         ticks: {
           color: '#64748b',
           font: { size: 10 },
-          maxTicksLimit: 12,
+          maxTicksLimit: 10,
         },
       },
       y: {
@@ -110,14 +127,15 @@ export default function StockChart({ ohlcv, ranges = [], activeRange = {}, onRan
         grid: { color: 'rgba(148, 163, 184, 0.06)' },
         ticks: {
           color: '#64748b',
-          font: { family: 'JetBrains Mono', size: 10 },
+          font: { family: 'Inter', size: 10 },
           callback: (val) => `₹${val.toFixed(0)}`,
         },
       },
     },
   };
 
-  // Volume chart
+  // Volume chart uses simple date strings for x-axis as labels to sync roughly
+  const labels = ohlcv.map(d => d.date);
   const maxVolume = Math.max(...volumes);
   const volumeData = {
     labels,
@@ -146,7 +164,7 @@ export default function StockChart({ ohlcv, ranges = [], activeRange = {}, onRan
         bodyColor: '#94a3b8',
         borderColor: 'rgba(148, 163, 184, 0.2)',
         borderWidth: 1,
-        padding: 10,
+        padding: 5,
         displayColors: false,
         callbacks: {
           label: (ctx) => {
@@ -204,7 +222,7 @@ export default function StockChart({ ohlcv, ranges = [], activeRange = {}, onRan
         )}
       </div>
       <div className="chart-container">
-        <Line ref={chartRef} data={priceData} options={priceOptions} />
+        <Chart ref={chartRef} type="candlestick" data={priceData} options={priceOptions} />
       </div>
       <div style={{ height: '60px', marginTop: '8px' }}>
         <Bar data={volumeData} options={volumeOptions} />

@@ -117,15 +117,11 @@ async def get_full_analysis(ticker: str):
     sentiment_score = sentiment["aggregate"]["score"]
     sentiment_confidence = sentiment["aggregate"]["confidence"]
 
-    # 4. ML prediction
-    ml_result = train_and_predict(df)
-
-    # 5. Composite Buy/Sell score
+    # 4. ML predictions and Composite Buy/Sell score across 3 horizons
     buy_sell = compute_buy_sell_score(
-        ml_result, 
-        technical_score, technical_confidence, 
-        sentiment_score, sentiment_confidence, 
-        df
+        df=df,
+        tech_score=technical_score, tech_conf=technical_confidence, 
+        sent_score=sentiment_score, sent_conf=sentiment_confidence
     )
 
     return {

@@ -56,7 +56,7 @@ def calculate_entropy_confidence(p: float) -> float:
     return max(0.0, (1.0 - h) * 100.0)
 
 
-def train_and_predict(df: pd.DataFrame) -> dict:
+def train_and_predict(df: pd.DataFrame, horizon_days: int = 5) -> dict:
     if df.empty or len(df) < 60:
         return {"prediction": "hold", "confidence": 0.0, "ml_score": 50.0}
 
@@ -65,15 +65,23 @@ def train_and_predict(df: pd.DataFrame) -> dict:
         if len(features) < 40:
             return {"prediction": "hold", "confidence": 0.0, "ml_score": 50.0}
 
-        # Target: 5-day return > 2% -> 1, < -2% -> 0, else NaN (ignored)
+        # Dynamic threshold mapping
+        if horizon_days <= 10:
+            threshold = 0.02
+        elif horizon_days <= 30:
+            threshold = 0.05
+        else:
+            threshold = 0.10
+
+        # Target: horizon_days return
         close_aligned = df["Close"].loc[features.index]
-        return_5d = (close_aligned.shift(-5) / close_aligned) - 1.0
+        return_hd = (close_aligned.shift(-horizon_days) / close_aligned) - 1.0
         
         target = pd.Series(index=features.index, dtype=float)
-        target.loc[return_5d > 0.02] = 1.0
-        target.loc[return_5d < -0.02] = 0.0
+        target.loc[return_hd > threshold] = 1.0
+        target.loc[return_hd < -threshold] = 0.0
 
-        # Create training set by dropping NaNs in target (which ignores middle returns and the latest 5 days)
+        # Create training set by dropping NaNs in target (which ignores middle returns and the latest days)
         valid = target.notna()
         features_train = features[valid]
         target_train = target[valid]
@@ -136,84 +144,96 @@ def train_and_predict(df: pd.DataFrame) -> dict:
 
 
 def compute_buy_sell_score(
-    ml_result: dict,
+    df: pd.DataFrame,
     tech_score: float,
     tech_conf: float,
     sent_score: float,
     sent_conf: float,
-    df: pd.DataFrame = None,
 ) -> dict:
-    
-    ml_score = ml_result.get("ml_score", 50.0)
-    ml_conf = ml_result.get("confidence", 0.0)
-
-    # Dynamic Weighting Formula:
-    # w_eff = (base_weight * confidence) / total
-    b_ml, b_tech, b_sent = 0.5, 0.3, 0.2
-    
-    w_ml = b_ml * (ml_conf / 100.0)
-    w_tech = b_tech * (tech_conf / 100.0)
-    w_sent = b_sent * (sent_conf / 100.0)
-    
-    total_w = w_ml + w_tech + w_sent
-    print(f"Weights: ML={w_ml}, Tech={w_tech}, Sent={w_sent}, Total={total_w}")
-
-    # Fallback to base weights if total confidence is exactly 0
-    if total_w <= 0.001:
-        eff_ml, eff_tech, eff_sent = b_ml, b_tech, b_sent
-    else:
-        eff_ml = w_ml / total_w
-        eff_tech = w_tech / total_w
-        eff_sent = w_sent / total_w
-
-    composite = (ml_score * eff_ml) + (tech_score * eff_tech) + (sent_score * eff_sent)
-    composite = round(max(0, min(100, composite)), 1)
-
-    # Apply safe +10 drop override
-    override_applied = False
-    if df is not None and not df.empty and len(df) > 20:
-        max_high = df["High"].max()
-        current_price = df["Close"].iloc[-1]
-        
-        rsi_series = ta.momentum.RSIIndicator(close=df["Close"], window=14).rsi().dropna()
-        rsi_val = rsi_series.iloc[-1] if not rsi_series.empty else 50
-        
-        avg_vol = df["Volume"].rolling(20).mean().iloc[-1]
-        curr_vol = df["Volume"].iloc[-1]
-
-        if max_high > 0:
-            drop_pct = (max_high - current_price) / max_high
-            if drop_pct > 0.50 and rsi_val < 30 and (avg_vol > 0 and curr_vol > 2 * avg_vol):
-                override_applied = True
-                composite = min(100.0, composite + 10.0)
-
-    # Target boundaries from changes.txt
-    if composite >= 75: signal = "strong_buy"
-    elif composite >= 60: signal = "buy"
-    elif composite >= 45: signal = "hold"
-    elif composite >= 30: signal = "sell"
-    else: signal = "strong_sell"
-
-    # Overall Confidence Calculation
-    overall_conf = round(
-        ((ml_conf * b_ml) + (tech_conf * b_tech) + (sent_conf * b_sent)) / (b_ml + b_tech + b_sent),
-        1
-    )
-
-    return {
-        "score": composite,
-        "confidence": overall_conf,
-        "signal": signal,
-        "components": {
-            "ml": {"score": round(ml_score, 1), "weight": f"{round(eff_ml*100)}%"},
-            "technical": {"score": round(tech_score, 1), "weight": f"{round(eff_tech*100)}%"},
-            "sentiment": {"score": round(sent_score, 1), "weight": f"{round(eff_sent*100)}%"},
-        },
-        "ml_details": {
-            "prediction": ml_result.get("prediction", "hold"),
-            "confidence": ml_conf,
-            "test_accuracy": ml_result.get("test_accuracy", 0),
-            "top_features": ml_result.get("feature_importances", {}),
-            "value_trap_boost": override_applied,
-        },
+    horizons = {
+        "short_term": {"days": 5, "name": "Short Term (1W)"},
+        "medium_term": {"days": 21, "name": "Medium Term (1M)"},
+        "long_term": {"days": 126, "name": "Long Term (6M)"}
     }
+
+    results = {}
+
+    for key, info in horizons.items():
+        ml_result = train_and_predict(df, horizon_days=info["days"])
+        
+        ml_score = ml_result.get("ml_score", 50.0)
+        ml_conf = ml_result.get("confidence", 0.0)
+
+        # Dynamic Weighting Formula:
+        b_ml, b_tech, b_sent = 0.5, 0.3, 0.2
+        
+        # Adjust technical weight for long term (technical drops, ML/Fundamentals increase theoretically)
+        if key == "long_term":
+            b_ml, b_tech, b_sent = 0.6, 0.2, 0.2
+        
+        w_ml = b_ml * (ml_conf / 100.0)
+        w_tech = b_tech * (tech_conf / 100.0)
+        w_sent = b_sent * (sent_conf / 100.0)
+        
+        total_w = w_ml + w_tech + w_sent
+
+        if total_w <= 0.001:
+            eff_ml, eff_tech, eff_sent = b_ml, b_tech, b_sent
+        else:
+            eff_ml = w_ml / total_w
+            eff_tech = w_tech / total_w
+            eff_sent = w_sent / total_w
+
+        composite = (ml_score * eff_ml) + (tech_score * eff_tech) + (sent_score * eff_sent)
+        composite = round(max(0, min(100, composite)), 1)
+
+        override_applied = False
+        if df is not None and not df.empty and len(df) > 20:
+            max_high = df["High"].max()
+            current_price = df["Close"].iloc[-1]
+            
+            rsi_series = ta.momentum.RSIIndicator(close=df["Close"], window=14).rsi().dropna()
+            rsi_val = rsi_series.iloc[-1] if not rsi_series.empty else 50
+            
+            avg_vol = df["Volume"].rolling(20).mean().iloc[-1]
+            curr_vol = df["Volume"].iloc[-1]
+
+            if max_high > 0:
+                drop_pct = (max_high - current_price) / max_high
+                if drop_pct > 0.50 and rsi_val < 30 and (avg_vol > 0 and curr_vol > 2 * avg_vol):
+                    override_applied = True
+                    # Only apply value trap boost on medium and long term
+                    if key != "short_term":
+                        composite = min(100.0, composite + 10.0)
+
+        if composite >= 75: signal = "strong_buy"
+        elif composite >= 60: signal = "buy"
+        elif composite >= 45: signal = "hold"
+        elif composite >= 30: signal = "sell"
+        else: signal = "strong_sell"
+
+        overall_conf = round(
+            ((ml_conf * b_ml) + (tech_conf * b_tech) + (sent_conf * b_sent)) / (b_ml + b_tech + b_sent),
+            1
+        )
+
+        results[key] = {
+            "name": info["name"],
+            "score": composite,
+            "confidence": overall_conf,
+            "signal": signal,
+            "components": {
+                "ml": {"score": round(ml_score, 1), "weight": f"{round(eff_ml*100)}%"},
+                "technical": {"score": round(tech_score, 1), "weight": f"{round(eff_tech*100)}%"},
+                "sentiment": {"score": round(sent_score, 1), "weight": f"{round(eff_sent*100)}%"},
+            },
+            "ml_details": {
+                "prediction": ml_result.get("prediction", "hold"),
+                "confidence": ml_conf,
+                "test_accuracy": ml_result.get("test_accuracy", 0),
+                "top_features": ml_result.get("feature_importances", {}),
+                "value_trap_boost": override_applied,
+            },
+        }
+
+    return results
