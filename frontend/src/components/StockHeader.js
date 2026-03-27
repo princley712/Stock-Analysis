@@ -29,7 +29,7 @@ export default function StockHeader({ data }) {
           <div className="stock-name">{data.name} · {data.exchange}</div>
           <div>
             <span className="stock-price">
-              {data.currency === 'INR' ? '₹' : '₹'}{data.current_price?.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {data.currency === 'INR' ? '₹' : '$'}{data.current_price?.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
             <span className={`stock-change ${isPositive ? 'positive' : 'negative'}`}>
               {arrow} {Math.abs(data.change)?.toFixed(2)} ({Math.abs(data.change_percent)?.toFixed(2)}%)

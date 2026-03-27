@@ -1,5 +1,4 @@
 import yfinance as yf
-import re
 
 # Local mapping for very common Indian stocks that users might just type the name of
 COMMON_INDIAN_STOCKS = {

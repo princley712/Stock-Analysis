@@ -3,7 +3,7 @@ Stock data service using yfinance.
 Fetches OHLCV data with in-memory caching to minimize API calls.
 """
 import time
-import requests
+
 import yfinance as yf
 import pandas as pd
 

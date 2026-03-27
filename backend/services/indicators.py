@@ -2,6 +2,9 @@
 Technical indicators service.
 Computes RSI, MACD, Moving Averages, Bollinger Bands using the `ta` library.
 """
+import math
+
+import numpy as np
 import pandas as pd
 import ta
 
@@ -95,7 +98,6 @@ def compute_indicators(df: pd.DataFrame) -> dict:
                 "histogram": round(float(macd_hist.iloc[i]), 4) if not pd.isna(macd_hist.iloc[i]) else 0,
             })
     # --- Z-Score Probabilities ---
-    import math
 
     def sigmoid(x):
         try:
@@ -172,7 +174,6 @@ def compute_indicators(df: pd.DataFrame) -> dict:
         "p_trend": p_trend,
     }
 
-import numpy as np
 
 def get_technical_score(indicators: dict) -> dict:
     """
