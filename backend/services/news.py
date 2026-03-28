@@ -3,6 +3,7 @@ News fetching service.
 Scrapes Google News RSS for stock-related headlines.
 """
 import time
+import yfinance as yf
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
@@ -24,10 +25,40 @@ def fetch_news(ticker: str, limit: int = 10) -> list:
         return _news_cache[cache_key]["data"]
 
     try:
-        # Google News RSS search
+        # 1. Try yfinance news first (more reliable on AWS)
+        ticker_obj = yf.Ticker(ticker)
+        yf_news = ticker_obj.news
+        
+        if yf_news:
+            articles = []
+            for item in yf_news[:limit]:
+                # yfinance returns providerPublishTime as unix timestamp
+                pub_time = item.get("providerPublishTime", 0)
+                pub_date = ""
+                if pub_time:
+                    try:
+                        dt = datetime.fromtimestamp(pub_time)
+                        pub_date = dt.strftime("%Y-%m-%d %H:%M")
+                    except Exception:
+                        pub_date = str(pub_time)
+
+                articles.append({
+                    "title": item.get("title", "No title"),
+                    "source": item.get("publisher", "Unknown"),
+                    "link": item.get("link", ""),
+                    "published": pub_date,
+                })
+            
+            if articles:
+                _news_cache[cache_key] = {"data": articles, "timestamp": now}
+                return articles
+
+        # 2. Fallback to Google News RSS (useful for local dev)
         url = f"https://news.google.com/rss/search?q={ticker}+stock&hl=en-US&gl=US&ceid=US:en"
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.google.com/"
         }
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
@@ -57,8 +88,11 @@ def fetch_news(ticker: str, limit: int = 10) -> list:
                 "published": pub_date,
             })
 
-        _news_cache[cache_key] = {"data": articles, "timestamp": now}
-        return articles
+        if articles:
+            _news_cache[cache_key] = {"data": articles, "timestamp": now}
+            return articles
+        
+        return []
 
     except Exception as e:
         # Return empty list on failure, don't break the app
