@@ -25,9 +25,23 @@ def fetch_news(ticker: str, limit: int = 10) -> list:
         return _news_cache[cache_key]["data"]
 
     try:
-        # 1. Try yfinance news first (more reliable on AWS)
+        # 1. Try yfinance news first (more reliable on AWS), with 5-second timeout
+        import concurrent.futures
         ticker_obj = yf.Ticker(ticker)
-        yf_news = ticker_obj.news
+        
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(lambda: ticker_obj.news)
+        try:
+            # 5 second timeout to prevent hanging the API
+            yf_news = future.result(timeout=5)
+        except concurrent.futures.TimeoutError:
+            print(f"yfinance news fetch timed out for {ticker}")
+            yf_news = None
+        except Exception as e:
+            print(f"yfinance news fetch failed for {ticker}: {e}")
+            yf_news = None
+        finally:
+            executor.shutdown(wait=False)
         
         if yf_news:
             articles = []
@@ -56,11 +70,9 @@ def fetch_news(ticker: str, limit: int = 10) -> list:
         # 2. Fallback to Google News RSS (useful for local dev)
         url = f"https://news.google.com/rss/search?q={ticker}+stock&hl=en-US&gl=US&ceid=US:en"
         headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://www.google.com/"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(url, headers=headers, timeout=3)
         response.raise_for_status()
 
         soup = BeautifulSoup(response.content, "xml")
