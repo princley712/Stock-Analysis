@@ -100,6 +100,8 @@ def get_stock_data(ticker: str, period: str = "1mo", interval: str = "1d") -> di
         return result
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return {"error": str(e), "ticker": ticker.upper()}
 
 
