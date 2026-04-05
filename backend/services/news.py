@@ -25,27 +25,65 @@ def fetch_news(ticker: str, limit: int = 10) -> list:
         return _news_cache[cache_key]["data"]
 
     try:
-        # 1. Try yfinance news first (more reliable on AWS)
+        # 1. Try yfinance news first (more reliable on AWS), with 5-second timeout
+        import concurrent.futures
         ticker_obj = yf.Ticker(ticker)
-        yf_news = ticker_obj.news
+        
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(lambda: ticker_obj.news)
+        try:
+            # 5 second timeout to prevent hanging the API
+            yf_news = future.result(timeout=5)
+        except concurrent.futures.TimeoutError:
+            print(f"yfinance news fetch timed out for {ticker}")
+            yf_news = None
+        except Exception as e:
+            print(f"yfinance news fetch failed for {ticker}: {e}")
+            yf_news = None
+        finally:
+            executor.shutdown(wait=False)
         
         if yf_news:
             articles = []
             for item in yf_news[:limit]:
-                # yfinance returns providerPublishTime as unix timestamp
-                pub_time = item.get("providerPublishTime", 0)
-                pub_date = ""
-                if pub_time:
-                    try:
-                        dt = datetime.fromtimestamp(pub_time)
-                        pub_date = dt.strftime("%Y-%m-%d %H:%M")
-                    except Exception:
-                        pub_date = str(pub_time)
+                # Check for new yfinance format where data is nested in "content"
+                if "content" in item and isinstance(item["content"], dict):
+                    content = item["content"]
+                    title = content.get("title", "No title")
+                    source = content.get("provider", {}).get("displayName", "Unknown")
+                    
+                    # Sometimes link is inside clickThroughUrl -> url
+                    click_data = content.get("clickThroughUrl", {})
+                    link = click_data.get("url", "") if isinstance(click_data, dict) else ""
+                    
+                    pub_date = ""
+                    pub_time = content.get("pubDate", "")
+                    if pub_time:
+                        try:
+                            # Usually ISO8601 like 2024-04-05T12:00:00Z
+                            dt = datetime.fromisoformat(str(pub_time).replace("Z", "+00:00"))
+                            pub_date = dt.strftime("%Y-%m-%d %H:%M")
+                        except Exception:
+                            pub_date = str(pub_time)[:16]
+                else:
+                    # Old flat format
+                    title = item.get("title", "No title")
+                    source = item.get("publisher", "Unknown")
+                    link = item.get("link", "")
+                    
+                    pub_time = item.get("providerPublishTime", 0)
+                    pub_date = ""
+                    if pub_time:
+                        try:
+                            dt = datetime.fromtimestamp(pub_time)
+                            pub_date = dt.strftime("%Y-%m-%d %H:%M")
+                        except Exception:
+                            pub_date = str(pub_time)
 
                 articles.append({
-                    "title": item.get("title", "No title"),
-                    "source": item.get("publisher", "Unknown"),
-                    "link": item.get("link", ""),
+                    "title": title,
+                    "source": source,
+                    "link": link,
                     "published": pub_date,
                 })
             
@@ -56,11 +94,9 @@ def fetch_news(ticker: str, limit: int = 10) -> list:
         # 2. Fallback to Google News RSS (useful for local dev)
         url = f"https://news.google.com/rss/search?q={ticker}+stock&hl=en-US&gl=US&ceid=US:en"
         headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://www.google.com/"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(url, headers=headers, timeout=3)
         response.raise_for_status()
 
         soup = BeautifulSoup(response.content, "xml")

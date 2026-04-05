@@ -24,16 +24,49 @@ def get_stock_data(ticker: str, period: str = "1mo", interval: str = "1d") -> di
         return _cache[cache_key]["data"]
 
     try:
+        df_cache_key = f"{ticker}_df_{period}"
         stock = yf.Ticker(ticker)
-        hist = stock.history(period=period, interval=interval)
+        
+        # Share cache aggressively between get_stock_data and get_historical_data
+        if df_cache_key in _cache and (now - _cache[df_cache_key]["timestamp"]) < CACHE_TTL * 2:
+            hist = _cache[df_cache_key]["data"]
+        else:
+            hist = stock.history(period=period, interval=interval)
+            if hist is not None and not hist.empty:
+                _cache[df_cache_key] = {"data": hist, "timestamp": now}
 
-        if hist.empty:
+        if hist is None or hist.empty:
             return {"error": f"No data found for {ticker}"}
 
-        # Get stock info
-        info = stock.info
-        current_price = info.get("currentPrice") or info.get("regularMarketPrice", 0)
-        previous_close = info.get("previousClose") or info.get("regularMarketPreviousClose", 0)
+        # Try to get stock info with a strict timeout to avoid hanging
+        import concurrent.futures
+        info = {}
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(lambda: stock.info)
+        try:
+            # 3 second timeout for info fetching
+            fetched_info = future.result(timeout=3)
+            if isinstance(fetched_info, dict):
+                info = fetched_info
+        except Exception as e:
+            print(f"yfinance info fetch timed out/failed for {ticker}: {e}")
+        finally:
+            executor.shutdown(wait=False)
+        
+        # Fallbacks for price data if info fails or is missing
+        current_price = info.get("currentPrice") or info.get("regularMarketPrice")
+        if not current_price and not hist.empty:
+            current_price = float(hist["Close"].iloc[-1])
+            
+        previous_close = info.get("previousClose") or info.get("regularMarketPreviousClose")
+        if not previous_close and len(hist) > 1:
+            previous_close = float(hist["Close"].iloc[-2])
+        elif not previous_close and not hist.empty:
+            # Fallback to Open if we only have 1 day of data
+            previous_close = float(hist["Open"].iloc[0])
+            
+        current_price = current_price or 0.0
+        previous_close = previous_close or 0.0
 
         change = current_price - previous_close if current_price and previous_close else 0
         change_pct = (change / previous_close * 100) if previous_close else 0
@@ -50,17 +83,22 @@ def get_stock_data(ticker: str, period: str = "1mo", interval: str = "1d") -> di
                 "volume": int(row["Volume"]),
             })
 
+        # Calculate 52-week values if missing (roughly 252 trading days)
+        # We might not have 252 days in this hist request, but return what we have
+        high_52 = info.get("fiftyTwoWeekHigh", round(float(hist["High"].max()), 2) if not hist.empty else 0)
+        low_52 = info.get("fiftyTwoWeekLow", round(float(hist["Low"].min()), 2) if not hist.empty else 0)
+
         result = {
             "ticker": ticker.upper(),
             "name": info.get("shortName", ticker.upper()),
-            "current_price": round(current_price, 2) if current_price else 0,
-            "previous_close": round(previous_close, 2) if previous_close else 0,
+            "current_price": round(current_price, 2),
+            "previous_close": round(previous_close, 2),
             "change": round(change, 2),
             "change_percent": round(change_pct, 2),
-            "volume": info.get("volume", 0),
+            "volume": info.get("volume", int(hist["Volume"].iloc[-1]) if not hist.empty else 0),
             "market_cap": info.get("marketCap", 0),
-            "fifty_two_week_high": info.get("fiftyTwoWeekHigh", 0),
-            "fifty_two_week_low": info.get("fiftyTwoWeekLow", 0),
+            "fifty_two_week_high": high_52,
+            "fifty_two_week_low": low_52,
             "currency": info.get("currency", "USD"),
             "exchange": info.get("exchange", ""),
             "ohlcv": ohlcv,
@@ -70,6 +108,8 @@ def get_stock_data(ticker: str, period: str = "1mo", interval: str = "1d") -> di
         return result
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return {"error": str(e), "ticker": ticker.upper()}
 
 
@@ -85,16 +125,16 @@ def get_historical_data(ticker: str, period: str = "6mo") -> pd.DataFrame:
     cache_key = f"{ticker}_df_{period}"
     now = time.time()
 
-    if cache_key in _cache and (now - _cache[cache_key]["timestamp"]) < CACHE_TTL:
+    if cache_key in _cache and (now - _cache[cache_key]["timestamp"]) < CACHE_TTL * 2:
         return _cache[cache_key]["data"]
 
     try:
         stock = yf.Ticker(ticker)
         df = stock.history(period=period, interval="1d")
 
-        if not df.empty:
+        if df is not None and not df.empty:
             _cache[cache_key] = {"data": df, "timestamp": now}
 
-        return df
+        return df if df is not None else pd.DataFrame()
     except Exception:
         return pd.DataFrame()
