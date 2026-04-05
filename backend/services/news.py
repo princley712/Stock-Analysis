@@ -46,20 +46,44 @@ def fetch_news(ticker: str, limit: int = 10) -> list:
         if yf_news:
             articles = []
             for item in yf_news[:limit]:
-                # yfinance returns providerPublishTime as unix timestamp
-                pub_time = item.get("providerPublishTime", 0)
-                pub_date = ""
-                if pub_time:
-                    try:
-                        dt = datetime.fromtimestamp(pub_time)
-                        pub_date = dt.strftime("%Y-%m-%d %H:%M")
-                    except Exception:
-                        pub_date = str(pub_time)
+                # Check for new yfinance format where data is nested in "content"
+                if "content" in item and isinstance(item["content"], dict):
+                    content = item["content"]
+                    title = content.get("title", "No title")
+                    source = content.get("provider", {}).get("displayName", "Unknown")
+                    
+                    # Sometimes link is inside clickThroughUrl -> url
+                    click_data = content.get("clickThroughUrl", {})
+                    link = click_data.get("url", "") if isinstance(click_data, dict) else ""
+                    
+                    pub_date = ""
+                    pub_time = content.get("pubDate", "")
+                    if pub_time:
+                        try:
+                            # Usually ISO8601 like 2024-04-05T12:00:00Z
+                            dt = datetime.fromisoformat(str(pub_time).replace("Z", "+00:00"))
+                            pub_date = dt.strftime("%Y-%m-%d %H:%M")
+                        except Exception:
+                            pub_date = str(pub_time)[:16]
+                else:
+                    # Old flat format
+                    title = item.get("title", "No title")
+                    source = item.get("publisher", "Unknown")
+                    link = item.get("link", "")
+                    
+                    pub_time = item.get("providerPublishTime", 0)
+                    pub_date = ""
+                    if pub_time:
+                        try:
+                            dt = datetime.fromtimestamp(pub_time)
+                            pub_date = dt.strftime("%Y-%m-%d %H:%M")
+                        except Exception:
+                            pub_date = str(pub_time)
 
                 articles.append({
-                    "title": item.get("title", "No title"),
-                    "source": item.get("publisher", "Unknown"),
-                    "link": item.get("link", ""),
+                    "title": title,
+                    "source": source,
+                    "link": link,
                     "published": pub_date,
                 })
             
