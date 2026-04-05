@@ -24,10 +24,18 @@ def get_stock_data(ticker: str, period: str = "1mo", interval: str = "1d") -> di
         return _cache[cache_key]["data"]
 
     try:
+        df_cache_key = f"{ticker}_df_{period}"
         stock = yf.Ticker(ticker)
-        hist = stock.history(period=period, interval=interval)
+        
+        # Share cache aggressively between get_stock_data and get_historical_data
+        if df_cache_key in _cache and (now - _cache[df_cache_key]["timestamp"]) < CACHE_TTL * 2:
+            hist = _cache[df_cache_key]["data"]
+        else:
+            hist = stock.history(period=period, interval=interval)
+            if hist is not None and not hist.empty:
+                _cache[df_cache_key] = {"data": hist, "timestamp": now}
 
-        if hist.empty:
+        if hist is None or hist.empty:
             return {"error": f"No data found for {ticker}"}
 
         # Try to get stock info with a strict timeout to avoid hanging
@@ -117,16 +125,16 @@ def get_historical_data(ticker: str, period: str = "6mo") -> pd.DataFrame:
     cache_key = f"{ticker}_df_{period}"
     now = time.time()
 
-    if cache_key in _cache and (now - _cache[cache_key]["timestamp"]) < CACHE_TTL:
+    if cache_key in _cache and (now - _cache[cache_key]["timestamp"]) < CACHE_TTL * 2:
         return _cache[cache_key]["data"]
 
     try:
         stock = yf.Ticker(ticker)
         df = stock.history(period=period, interval="1d")
 
-        if not df.empty:
+        if df is not None and not df.empty:
             _cache[cache_key] = {"data": df, "timestamp": now}
 
-        return df
+        return df if df is not None else pd.DataFrame()
     except Exception:
         return pd.DataFrame()
