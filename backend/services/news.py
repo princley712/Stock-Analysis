@@ -46,20 +46,52 @@ def fetch_news(ticker: str, limit: int = 10) -> list:
         if yf_news:
             articles = []
             for item in yf_news[:limit]:
-                # yfinance returns providerPublishTime as unix timestamp
-                pub_time = item.get("providerPublishTime", 0)
-                pub_date = ""
-                if pub_time:
-                    try:
-                        dt = datetime.fromtimestamp(pub_time)
-                        pub_date = dt.strftime("%Y-%m-%d %H:%M")
-                    except Exception:
-                        pub_date = str(pub_time)
+                # New yfinance format with 'content' dict
+                if "content" in item:
+                    content = item["content"]
+                    pub_date_str = content.get("pubDate", "")
+                    pub_date = ""
+                    if pub_date_str:
+                        # e.g., '2026-04-08T20:32:00Z'
+                        try:
+                            dt = datetime.strptime(pub_date_str, "%Y-%m-%dT%H:%M:%SZ")
+                            pub_date = dt.strftime("%Y-%m-%d %H:%M")
+                        except Exception:
+                            pub_date = pub_date_str
+
+                    title = content.get("title", "No title")
+                    
+                    provider = content.get("provider", {})
+                    source = provider.get("displayName", "Unknown") if isinstance(provider, dict) else "Unknown"
+                    
+                    click_url = content.get("clickThroughUrl")
+                    canonical_url = content.get("canonicalUrl", {})
+                    
+                    if click_url and isinstance(click_url, dict) and click_url.get("url"):
+                        link = click_url.get("url")
+                    elif canonical_url and isinstance(canonical_url, dict) and canonical_url.get("url"):
+                        link = canonical_url.get("url")
+                    else:
+                        link = ""
+                # Old yfinance format
+                else:
+                    pub_time = item.get("providerPublishTime", 0)
+                    pub_date = ""
+                    if pub_time:
+                        try:
+                            dt = datetime.fromtimestamp(pub_time)
+                            pub_date = dt.strftime("%Y-%m-%d %H:%M")
+                        except Exception:
+                            pub_date = str(pub_time)
+                    
+                    title = item.get("title", "No title")
+                    source = item.get("publisher", "Unknown")
+                    link = item.get("link", "")
 
                 articles.append({
-                    "title": item.get("title", "No title"),
-                    "source": item.get("publisher", "Unknown"),
-                    "link": item.get("link", ""),
+                    "title": title,
+                    "source": source,
+                    "link": link,
                     "published": pub_date,
                 })
             
